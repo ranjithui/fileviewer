@@ -1,9 +1,9 @@
 """
-Streamlit Data Cleaner – Dual Upload Version
---------------------------------------------
+Streamlit Data Cleaner – Dual Upload Version (Cloud-friendly)
+------------------------------------------------------------
 - Upload your main Excel file
 - Upload your blacklist Excel file
-- Removes rows from main file if Company Name OR Email matches blacklist
+- Removes rows where Company Name OR Email matches blacklist
 - Live edit / delete rows
 - Download cleaned Excel
 """
@@ -16,14 +16,18 @@ st.set_page_config(page_title="Data Cleaner + Live Editor", layout="wide")
 
 # ---------------------- Uploaders ----------------------
 st.title("📋 Data Cleaner + Live Editor (Dual Upload)")
-st.markdown("Upload your main Excel file and your blacklist Excel file. The app will remove rows where Company Name or Email exists in the blacklist.")
+st.markdown(
+    "Upload your main Excel file and your blacklist Excel file. "
+    "The app will remove rows where Company Name or Email exists in the blacklist. "
+    "You can edit/delete rows live and download the final cleaned file."
+)
 
 uploaded_file = st.file_uploader("Upload your main Excel file (XLSX)", type=["xlsx"])
 uploaded_blacklist = st.file_uploader("Upload your Blacklist Excel file (XLSX)", type=["xlsx"])
 
 if not uploaded_file or not uploaded_blacklist:
-    st.info("Please upload both main file and blacklist to continue.")
-    st.stop()
+    st.info("Please upload both the main file and the blacklist to start processing.")
+    st.stop()  # Prevent processing until both files are uploaded
 
 # ---------------------- Load main file ----------------------
 try:
@@ -46,21 +50,20 @@ KEY_EMAIL = "Email"
 def normalize_series(s: pd.Series) -> pd.Series:
     return s.fillna("").astype(str).str.lower().str.strip()
 
-# Check columns exist
-for df_check, name in [(df, "Main file"), (blacklist, "Blacklist")]:
-    if not any(c.lower() == KEY_COMPANY.lower() for c in df_check.columns):
-        st.error(f"{name} missing column: {KEY_COMPANY}")
-        st.stop()
-    if not any(c.lower() == KEY_EMAIL.lower() for c in df_check.columns):
-        st.error(f"{name} missing column: {KEY_EMAIL}")
-        st.stop()
-
-# ---------------------- Normalize columns ----------------------
 def get_col(df, key):
     for c in df.columns:
         if c.lower() == key.lower():
             return c
     return None
+
+# ---------------------- Check columns ----------------------
+for df_check, name in [(df, "Main file"), (blacklist, "Blacklist")]:
+    if not get_col(df_check, KEY_COMPANY):
+        st.error(f"{name} missing column: {KEY_COMPANY}")
+        st.stop()
+    if not get_col(df_check, KEY_EMAIL):
+        st.error(f"{name} missing column: {KEY_EMAIL}")
+        st.stop()
 
 main_company_col = get_col(df, KEY_COMPANY)
 main_email_col = get_col(df, KEY_EMAIL)
@@ -77,20 +80,19 @@ df_key_email = normalize_series(df[main_email_col])
 
 is_company_blacklisted = df_key_company.isin(blacklist_companies)
 is_email_blacklisted = df_key_email.isin(blacklist_emails)
-
 blacklisted_mask = is_company_blacklisted | is_email_blacklisted
 
 df_blocked = df[blacklisted_mask].copy()
 df_clean = df[~blacklisted_mask].copy()
 
-# Remove duplicates in clean list
+# Remove duplicates
 df_clean = df_clean.drop_duplicates(subset=[main_company_col, main_email_col])
 
-# Sort by company name
+# Sort by company
 df_clean['_sort_company'] = normalize_series(df_clean[main_company_col])
 df_clean = df_clean.sort_values('_sort_company').drop(columns=['_sort_company'])
 
-# Initialize session state for editing
+# Initialize session state
 if 'edited_df' not in st.session_state:
     st.session_state.edited_df = df_clean.copy()
 
@@ -110,6 +112,7 @@ with col2:
     st.subheader("✅ Clean list — Edit & Delete")
     edited_df = st.session_state.edited_df
 
+    # Toolbar
     toolbar_cols = st.columns([1, 1, 1, 4])
     if toolbar_cols[0].button("Reset edits"):
         st.session_state.edited_df = df_clean.copy()
@@ -139,7 +142,7 @@ with col2:
                 st.session_state.edited_df = edited_df
                 st.experimental_rerun()
 
-    # Download final cleaned dataframe
+    # Download cleaned Excel
     st.subheader("⬇️ Download Final Cleaned File")
     if not edited_df.empty:
         out = BytesIO()
